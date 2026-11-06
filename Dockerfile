@@ -33,6 +33,12 @@ RUN mkdir -p node_modules/.vite && chmod 777 node_modules node_modules/.vite
 
 COPY --chown=node:node . .
 
+# Render can run the hosted instance in preview mode, avoiding Vite's
+# development dependency optimizer and keeping the free 512 MiB runtime within
+# its memory limit. Local compose remains development-mode unless it opts into
+# GEV_PRODUCTION_PREVIEW=1 explicitly.
+RUN npm run build
+
 # Bind to all interfaces, otherwise the published port hits nothing. This does
 # not widen the Host allowlist: IP addresses and localhost are accepted, other
 # names only via GEV_ALLOWED_HOSTS (see build/allowedHosts.js).

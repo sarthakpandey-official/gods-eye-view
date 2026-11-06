@@ -7,8 +7,10 @@
  * network's gateway address, never from 127.0.0.1. Provider Settings admits
  * loopback only, so without this the POWER UP panel refuses the very machine
  * running the container. This launcher reads the gateway out of the kernel
- * routing table and declares exactly that one address trusted, then starts
- * Vite the way scripts/pinokio-start.mjs does.
+ * gateway address and declares exactly that one address trusted, then starts
+ * Vite the way scripts/pinokio-start.mjs does. Hosted deployments can set
+ * GEV_PRODUCTION_PREVIEW=1 to serve the prebuilt bundle through Vite preview,
+ * which uses substantially less memory than the development optimizer.
  */
 import { accessSync, constants, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -127,20 +129,33 @@ async function start() {
   }
 
   const port = Number.parseInt(process.env.PORT, 10) || 4173;
-  const { createServer } = await loadViteFromCanonicalRoot(ROOT);
-  const server = await createServer({
-    root: ROOT,
-    server: {
-      // The container's own namespace. compose publishes this to the host's
-      // 127.0.0.1 only; widening that mapping is the LAN opt-in.
-      host: '0.0.0.0',
-      port,
-      strictPort: true,
-    },
-  });
-  await server.listen();
+  const vite = await loadViteFromCanonicalRoot(ROOT);
+  const productionPreview =
+    String(process.env.GEV_PRODUCTION_PREVIEW ?? '').trim() === '1';
+  const server = productionPreview
+    ? await vite.preview({
+        root: ROOT,
+        preview: {
+          host: '0.0.0.0',
+          port,
+          strictPort: true,
+        },
+      })
+    : await vite.createServer({
+        root: ROOT,
+        server: {
+          // The container's own namespace. compose publishes this to the host's
+          // 127.0.0.1 only; widening that mapping is the LAN opt-in.
+          host: '0.0.0.0',
+          port,
+          strictPort: true,
+        },
+      });
+  if (!productionPreview) await server.listen();
   server.printUrls();
-  console.log(`[Docker] Ready at http://localhost:${port}/`);
+  console.log(
+    `[Docker] ${productionPreview ? 'Production preview' : 'Development'} ready at http://localhost:${port}/`,
+  );
 
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.once(signal, async () => {
